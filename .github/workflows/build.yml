@@ -63,4 +63,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" out/*.stl out/*.step out/*.FCStd \
             --title "$GITHUB_REF_NAME" \
-            --notes "trash-bag-hoop.stl: print flat as is, no support. Ring 134 mm OD with ribbed outside, for a ~140 mm bag mouth. Built by CI from build.FCMacro with FreeCAD ${FREECAD_VERSION}."
+            --notes "trash-bag-hoop.stl: ring (176 mm, ribbed) + flex table clamp (69 mm table) on one A1 Mini plate, print as is, no support, no brim. trash-bag-hoop-clamp-test.stl: 6 mm slice of the clamp to test the fit first. Built by CI from build.FCMacro with FreeCAD ${FREECAD_VERSION}."

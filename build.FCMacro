@@ -1,10 +1,20 @@
-"""Trash bag hoop: a plain ring. The bag mouth folds over it.
+"""Trash bag hoop: a ribbed ring held off a table edge by a flex clamp.
 
-The outside has fine vertical ribs: a better grip on the bag and a nicer feel.
-The ribs run along the print Z axis and fade out in the 45 deg chamfers.
+Ring: the bag mouth folds over it. Fine vertical ribs outside for grip and feel.
+Clamp (user's sketch): a C with round knuckles at the spine corners and tapered
+arms that lean in, so the tips sit closer than the table is thick. Pushed onto
+the edge, the arms flex open and spring-grip the table. No screws.
+A holder on the spine has a curved slot; the ring (with the bag folded over it)
+drops in, so the bag is also pinched there and hangs beside the table.
+
+The bag load pries the clamp: the bottom arm tip bears up on the table
+underside, so the grip only has to keep it from sliding off.
+
+One plate: ring flat, clamp on its side inside the ring. The clamp profile lies
+on the bed, so the arms flex along the layer lines. No support (checked).
 
 Run `flatpak run --command=FreeCADCmd org.freecad.FreeCAD "$PWD/build.FCMacro"`.
-Units are millimetres. Prints flat, no support.
+Units are millimetres.
 """
 import math
 import os
@@ -18,6 +28,8 @@ V = App.Vector
 
 BED = 180.0  # Bambu A1 Mini, X and Y.
 BED_MARGIN = 2.0  # Knob: clearance to the bed edge, each side.
+
+# Ring.
 WALL = 6.0  # Radial width. In-plane stiffness (ring squeezed oval) ~ HEIGHT * WALL^3.
 HEIGHT = 10.0  # Twist and droop stiffness ~ WALL * HEIGHT^3.
 CHAMFER = 1.0  # All 4 edges: no sharp edge on the bag, no elephant foot.
@@ -25,43 +37,218 @@ RIB_PITCH = 3.0  # Knob: rib spacing around the outside.
 RIB_DEPTH = 0.6  # Knob: rib height. 0 = smooth ring.
 RING_OD = BED - 2 * (BED_MARGIN + RIB_DEPTH)  # Largest ring that fits the bed, rib tips included.
 
+# Clamp. Use frame: table top z = 0, table edge x = 0, table at x < 0, width along y.
+TABLE_T = 69.0  # Measured: table top thickness at the edge (user, 2nd reading; was 68).
+SQUEEZE = 1.5  # Knob: each free arm tip sits this far into the table. More = tighter grip.
+ROOT_CL = 0.25  # Arm root to the table face, so the clamp seats on the edge.
+ARM_L = 40.0  # How far the arms reach over and under the table.
+ROOT_T = 6.0  # Arm thickness at the spine.
+TIP_T = 3.0  # Arm thickness at the tip: thinner = more flex.
+SPINE_T = 6.0
+KNUCKLE_R = 4.0  # Round knuckle at each spine corner: stiff root, flex in the arm.
+CLAMP_W = 30.0  # Along the table edge; also the print height.
+LEAD_IN = 1.5  # 45 deg on the inner arm tips, so the clamp slides on.
+E_PLA = 3500.0  # ASSUMED: PLA modulus, MPa.
+MAX_STRESS = 25.0  # About half of PLA yield: limits creep under constant preload.
+SLOT_CL = 0.25  # Knob: radial clearance per side, ring (plus bag) in the holder slot.
+HOLDER_IN = 4.0  # Holder wall inside the ring.
+HOLDER_OUT = 3.0  # Holder wall between the ring and the clamp spine.
+HOLDER_FLOOR = 3.0
+FILLET = 1.0  # Edges along the print Z axis.
+CLAMP_CHAMFER = 0.5  # Bed and top edges.
+PLATE_GAP = 3.0  # Clamp to ring on the plate.
+TEST_H = 6.0  # Fit-test slice of the clamp: print height.
+MAX_OVERHANG = 47.0  # deg from vertical: 45 deg chamfers read up to ~46.1 after tessellation.
+
 STL_TOLERANCE = 0.05
 OUT = Path(__file__).resolve().parent / "out"
 NAME = "trash-bag-hoop"
 
 ro, ri, c, h = RING_OD / 2, RING_OD / 2 - WALL, CHAMFER, HEIGHT
 rp = ro + RIB_DEPTH  # Rib peak.
-c_out = c + RIB_DEPTH  # Outer chamfer ends on the valleys, so the ribs fade out.
-rz = [(ri + c, 0), (rp - c_out, 0), (rp, c_out), (rp, h - c_out), (rp - c_out, h), (ri + c, h), (ri, h - c), (ri, c)]
-face = Part.Face(Part.makePolygon([V(r, 0, z) for r, z in rz + rz[:1]]))
-envelope = face.revolve(V(0, 0, 0), V(0, 0, 1), 360)
-
 n = round(math.pi * RING_OD / RIB_PITCH)
-star = [V(r * math.cos(a), r * math.sin(a), 0) for i in range(2 * n) for a, r in [(i * math.pi / n, rp if i % 2 == 0 else ro)]]
-ribs = Part.Face(Part.makePolygon(star + star[:1])).extrude(V(0, 0, h))
-s = envelope.common(ribs)
+Z_TOP = ROOT_CL + ROOT_T  # Clamp top (arm root, outside), also the ring top.
+X_RING = SPINE_T + HOLDER_OUT + SLOT_CL + rp  # Ring centre from the table edge, in use.
 
-bb = s.BoundBox
-assert s.isValid() and len(s.Solids) == 1, "not one valid solid"
-assert abs(bb.XLength - 2 * rp) < 1e-6 and abs(bb.ZMin) < 1e-6 and abs(bb.ZLength - h) < 1e-6, bb
-assert 2 * rp <= BED - 2 * BED_MARGIN + 1e-6, f"ring {2 * rp:.1f} does not fit the {BED:g} bed"
-assert not s.isInside(V(0, 0, h / 2), 1e-3, True), "centre must be open"
-outer = max(s.slice(V(0, 0, 1), h / 2), key=lambda w: w.BoundBox.XLength)
-assert len(outer.Edges) == 2 * n, f"expected {n} ribs, found {len(outer.Edges) / 2:g}"
-valley = math.pi / n
-assert s.isInside(V(rp - 0.05, 0, h / 2), 1e-3, True), "rib peak missing"
-assert not s.isInside(V((ro + 0.1) * math.cos(valley), (ro + 0.1) * math.sin(valley), h / 2), 1e-3, True), "rib valley missing"
-mesh = Mesh.Mesh(s.tessellate(STL_TOLERANCE))
-assert mesh.isSolid() and not mesh.hasNonManifolds(), "mesh not watertight"
+
+def z_inner(x):
+    """Free top-arm inner face: ROOT_CL above the table at the root, SQUEEZE into it at the tip."""
+    return ROOT_CL + (ROOT_CL + SQUEEZE) * x / ARM_L
+
+
+def z_outer(x):
+    return z_inner(x) + ROOT_T + (ROOT_T - TIP_T) * x / ARM_L
+
+
+def rib_star():
+    """Ring's rib outline in XY, centred on the origin: n peaks at rp, n valleys at ro."""
+    star = [V(r * math.cos(a), r * math.sin(a), 0) for i in range(2 * n) for a, r in [(i * math.pi / n, rp if i % 2 == 0 else ro)]]
+    return Part.Face(Part.makePolygon(star + star[:1]))
+
+
+def ring():
+    """Centre on the Z axis, flat on z = 0."""
+    c_out = c + RIB_DEPTH  # Outer chamfer ends on the valleys, so the ribs fade out.
+    rz = [(ri + c, 0), (rp - c_out, 0), (rp, c_out), (rp, h - c_out), (rp - c_out, h), (ri + c, h), (ri, h - c), (ri, c)]
+    face = Part.Face(Part.makePolygon([V(r, 0, z) for r, z in rz + rz[:1]]))
+    envelope = face.revolve(V(0, 0, 0), V(0, 0, 1), 360)
+    return envelope.common(rib_star().extrude(V(0, 0, h)))
+
+
+def clamp():
+    """Profile in XZ (use frame), extruded along y."""
+    L, li, S, R = ARM_L, LEAD_IN, SPINE_T, KNUCKLE_R
+    top_arm = [(0, z_inner(0)), (-L + li, z_inner(-L + li)), (-L, z_inner(-L + li) + li), (-L, z_outer(-L)), (0, z_outer(0))]
+    flip = lambda pts: [(x, -TABLE_T - z) for x, z in reversed(pts)]  # Mirror about the table mid-plane.
+    poly = lambda pts: Part.Face(Part.makePolygon([V(x, 0, z) for x, z in pts + pts[:1]]))
+    spine = poly([(0, -TABLE_T - Z_TOP), (S, -TABLE_T - Z_TOP), (S, Z_TOP), (0, Z_TOP)])
+    # Bottom knuckle centred on the outer corner: it meets both faces at 90 deg, no slivers.
+    # The top root needs none: the ring holder stiffens it.
+    knuckle = Part.Face(Part.Wire(Part.makeCircle(R, V(S, 0, -TABLE_T - Z_TOP), V(0, 1, 0))))
+    pieces = [f.extrude(V(0, CLAMP_W, 0)) for f in (poly(top_arm), poly(flip(top_arm)), knuckle)]
+    s = spine.extrude(V(0, CLAMP_W, 0)).fuse(pieces).removeSplitter()
+    assert len(s.Solids) == 1, f"clamp is {len(s.Solids)} solids, expected 1"
+
+    z_ring = Z_TOP - h  # Ring top flush with the clamp top.
+    cyl = lambda r, z0, hh: Part.makeCylinder(r, hh, V(X_RING, CLAMP_W / 2, z0))
+    holder = Part.makeBox(X_RING - S + 0.1, CLAMP_W, h + HOLDER_FLOOR, V(S - 0.1, 0, z_ring - HOLDER_FLOOR))
+    holder = holder.cut(cyl(ri - SLOT_CL - HOLDER_IN, z_ring - HOLDER_FLOOR - 1, h + HOLDER_FLOOR + 2))
+    # Outer slot wall carries the ring's ribs, grown by SLOT_CL: the ring meshes with it and cannot spin.
+    teeth = rib_star().makeOffset2D(SLOT_CL)
+    teeth.translate(V(X_RING, CLAMP_W / 2, z_ring))
+    slot = teeth.extrude(V(0, 0, h + 1)).cut(cyl(ri - SLOT_CL, z_ring - 1, h + 3))
+    s = s.fuse(holder).cut(slot).removeSplitter()
+
+    def corner(e):
+        """Angle between the two faces at edge e, deg. Shallow kinks (arm taper) cannot take a fillet."""
+        f1, f2 = s.ancestorsOfType(e, Part.Face)
+        p = e.Vertexes[0].Point
+        return math.degrees(f1.normalAt(*f1.Surface.parameter(p)).getAngle(f2.normalAt(*f2.Surface.parameter(p))))
+
+    along = [
+        e for e in s.Edges
+        if isinstance(e.Curve, Part.Line) and abs(e.BoundBox.YLength - CLAMP_W) < 1e-6
+        and e.BoundBox.XLength + e.BoundBox.ZLength < 1e-6 and corner(e) > 30
+    ]
+    s = s.makeFillet(FILLET, along)
+    def on_slot(e):
+        p = e.CenterOfMass
+        return ri - SLOT_CL - 0.01 < math.hypot(p.x - X_RING, p.y - CLAMP_W / 2) < rp + SLOT_CL + 0.01
+
+    side = [e for e in s.Edges if e.BoundBox.YLength < 1e-6 and not on_slot(e)]  # Tooth edges are too small to chamfer.
+    return s.makeChamfer(CLAMP_CHAMFER, side)
+
+
+def check_ring(s):
+    bb = s.BoundBox
+    assert s.isValid() and len(s.Solids) == 1, "ring: not one valid solid"
+    assert abs(bb.XLength - 2 * rp) < 1e-6 and abs(bb.ZMin) < 1e-6 and abs(bb.ZLength - h) < 1e-6, bb
+    assert 2 * rp <= BED - 2 * BED_MARGIN + 1e-6, f"ring {2 * rp:.1f} does not fit the {BED:g} bed"
+    assert not s.isInside(V(0, 0, h / 2), 1e-3, True), "ring: centre must be open"
+    outer = max(s.slice(V(0, 0, 1), h / 2), key=lambda w: w.BoundBox.XLength)
+    assert len(outer.Edges) == 2 * n, f"expected {n} ribs, found {len(outer.Edges) / 2:g}"
+    valley = math.pi / n
+    assert s.isInside(V(rp - 0.05, 0, h / 2), 1e-3, True), "rib peak missing"
+    assert not s.isInside(V((ro + 0.1) * math.cos(valley), (ro + 0.1) * math.sin(valley), h / 2), 1e-3, True), "rib valley missing"
+
+
+def check_clamp(s, r):
+    """s: clamp in use, r: ring in use (seated in the slot)."""
+    assert s.isValid() and len(s.Solids) == 1, "clamp: not one valid solid"
+    L, S, y = ARM_L, SPINE_T, CLAMP_W / 2
+    inside = lambda x, z: s.isInside(V(x, y, z), 1e-3, True)
+    tip = -L + LEAD_IN + 0.5
+    assert not inside(-L / 2, -TABLE_T / 2), "table gap not open"
+    assert not inside(-1, 0.1) and not inside(-1, -TABLE_T - 0.1), "arm root touches the table"
+    assert inside(tip, -0.1) and inside(tip, -TABLE_T + 0.1), "arm tips do not reach into the table"
+    assert inside(-L / 2, z_outer(-L / 2) - 0.2) and not inside(-L / 2, z_outer(-L / 2) + 0.2), "top arm taper wrong"
+    assert inside(S / 2, -TABLE_T / 2), "spine missing"
+    assert inside(S + KNUCKLE_R * 0.6, -TABLE_T - Z_TOP - KNUCKLE_R * 0.6), "knuckle missing"
+    assert not inside(-L + 0.2, z_inner(-L + LEAD_IN) + 0.2), "lead-in missing"
+
+    # Flex: each arm is a tapered cantilever, deflected SQUEEZE + ROOT_CL at its tip.
+    t_mid = (ROOT_T + TIP_T) / 2
+    I = CLAMP_W * t_mid**3 / 12
+    defl = SQUEEZE + ROOT_CL
+    force = 3 * E_PLA * I * defl / L**3
+    stress = force * L * (ROOT_T / 2) / (CLAMP_W * ROOT_T**3 / 12)
+    assert stress < MAX_STRESS, f"arm root stress {stress:.0f} MPa: PLA would creep or snap"
+
+    x_slot, z_mid = X_RING - (ri + rp) / 2, Z_TOP - h / 2
+    assert not inside(x_slot, z_mid), "slot not open"
+    assert inside(X_RING - (ri - SLOT_CL - HOLDER_IN / 2), z_mid), "holder inner wall missing"
+    assert inside(S + HOLDER_OUT / 2, z_mid), "holder outer wall missing"
+    assert inside(x_slot, Z_TOP - h - HOLDER_FLOOR / 2), "holder floor missing"
+    common = s.common(r).Volume
+    assert common < 1e-3, f"ring hits the holder: {common:.3f} mm^3"
+    gap = s.distToShape(r)[0]
+    assert gap < 1e-3, f"ring does not sit on the holder floor: {gap:.3f}"
+    spun = r.copy()
+    spun.rotate(V(X_RING, CLAMP_W / 2, 0), V(0, 0, 1), math.degrees(math.pi / n))  # Half a rib pitch.
+    locked = s.common(spun).Volume
+    assert locked > 1.0, f"ring can spin in the holder: only {locked:.2f} mm^3 overlap at half a rib pitch"
+    return force, stress
+
+
+def place_for_print(s):
+    """Clamp on its side: the C profile on the bed, centred inside the ring."""
+    s = s.copy()
+    s.rotate(V(0, 0, 0), V(1, 0, 0), 90)  # Use (x, y, z) -> print (x, -z, y).
+    bb = s.BoundBox
+    s.translate(V(-(bb.XMin + bb.XMax) / 2, -(bb.YMin + bb.YMax) / 2, -bb.ZMin))
+    return s
+
+
+def check_plate(r, k):
+    plate = Part.makeCompound([r, k])
+    bb = plate.BoundBox
+    assert abs(bb.ZMin) < 1e-6 and bb.XLength <= BED - 2 * BED_MARGIN + 1e-6, f"plate does not fit: {bb}"
+    gap = r.distToShape(k)[0]
+    assert gap >= PLATE_GAP, f"clamp only {gap:.1f} mm from the ring on the plate"
+    mesh = Mesh.Mesh(plate.tessellate(STL_TOLERANCE))
+    assert mesh.isSolid() and not mesh.hasNonManifolds(), "mesh not watertight"
+    nz = -math.sin(math.radians(MAX_OVERHANG))
+    facets = [f for f in mesh.Facets if f.Normal.z < nz and min(p[2] for p in f.Points) > 0.05]
+    bad = sum(f.Area for f in facets)
+    where = sorted({(round(f.Points[0][0], 1), round(f.Points[0][1], 1), round(f.Points[0][2], 1), round(f.Normal.z, 2)) for f in facets})[:6]
+    assert bad < 0.01, f"{bad:.2f} mm^2 flatter than {MAX_OVERHANG:g} deg would need support, at {where}"
+    return plate, mesh, gap
+
+
+r = ring()
+check_ring(r)
+k_use = clamp()
+r_use = r.copy()
+r_use.translate(V(X_RING, CLAMP_W / 2, Z_TOP - h))
+force, stress = check_clamp(k_use, r_use)
+k = place_for_print(k_use)
+plate, mesh, gap = check_plate(r, k)
 
 OUT.mkdir(exist_ok=True)
 doc = App.newDocument("TrashBagHoop")
-doc.addObject("Part::Feature", "Hoop").Shape = s
+doc.addObject("Part::Feature", "Ring").Shape = r
+doc.addObject("Part::Feature", "Clamp").Shape = k
 doc.recompute()
 out = OUT / NAME
-for suffix, write in ((".FCStd", doc.saveAs), (".step", s.exportStep), (".stl", mesh.write)):
+for suffix, write in ((".FCStd", doc.saveAs), (".step", plate.exportStep), (".stl", mesh.write)):
     tmp = str(out) + ".tmp" + suffix
     write(tmp)
     os.replace(tmp, out.with_suffix(suffix))
 App.closeDocument(doc.Name)
-print(f"PASS: ring OD {RING_OD:g} (+{RIB_DEPTH:g} ribs, {n} x {RIB_PITCH:g} mm) ID {2 * ri:g} x {h:g} tall, {s.Volume * 1.24e-3:.0f} g PLA, wrote {out}.{{FCStd,step,stl}}")
+
+# Fit test: a thin slice of the clamp off the bed, same profile, to try on the table.
+# Grip force scales with width (~ TEST_H / CLAMP_W of the full clamp); the fit does not.
+test = k.common(Part.makeBox(BED, BED, TEST_H, V(-BED / 2, -BED / 2, 0)))
+assert test.isValid() and len(test.Solids) == 1, "fit test: not one solid"
+test_mesh = Mesh.Mesh(test.tessellate(STL_TOLERANCE))
+assert test_mesh.isSolid() and not test_mesh.hasNonManifolds(), "fit test mesh not watertight"
+tmp = str(out) + "-clamp-test.tmp.stl"
+test_mesh.write(tmp)
+os.replace(tmp, str(out) + "-clamp-test.stl")
+tb = test.BoundBox
+print(f"PASS: clamp fit test {tb.XLength:.1f} x {tb.YLength:.1f} x {tb.ZLength:.1f}, {test.Volume * 1.24e-3:.0f} g PLA, wrote {out}-clamp-test.stl")
+kb = k_use.BoundBox
+print(f"PASS: flex clamp for a {TABLE_T:g} mm table, arms {ROOT_T:g}->{TIP_T:g} x {ARM_L:g}, squeeze {SQUEEZE:g}/arm: ~{force:.0f} N grip, {stress:.0f} MPa root stress, {k.Volume * 1.24e-3:.0f} g PLA")
+print(f"PASS: clamp {kb.XLength:.1f} x {kb.YLength:.1f} x {kb.ZLength:.1f}, ring centre {X_RING:.1f} from the table edge")
+print(f"PASS: plate {plate.BoundBox.XLength:.1f} x {plate.BoundBox.YLength:.1f} x {plate.BoundBox.ZLength:.1f}, clamp {gap:.1f} mm inside the ring, no overhang")
+print(f"PASS: ring OD {RING_OD:g} (+{RIB_DEPTH:g} ribs, {n} x {RIB_PITCH:g} mm) ID {2 * ri:g} x {h:g} tall, {r.Volume * 1.24e-3:.0f} g PLA, wrote {out}.{{FCStd,step,stl}}")
