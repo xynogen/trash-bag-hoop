@@ -1,0 +1,66 @@
+"""Trash bag hoop: a plain ring. The bag mouth folds over it.
+
+The outside has fine vertical ribs: a better grip on the bag and a nicer feel.
+The ribs run along the print Z axis and fade out in the 45 deg chamfers.
+
+Run `flatpak run --command=FreeCADCmd org.freecad.FreeCAD "$PWD/build.FCMacro"`.
+Units are millimetres. Prints flat, no support.
+"""
+import math
+import os
+from pathlib import Path
+
+import FreeCAD as App
+import Mesh
+import Part
+
+V = App.Vector
+
+# ASSUMED: the user's bag is about 140 mm across when opened round.
+BAG_D = 140.0
+RING_OD = BAG_D - 6.0  # Knob: smaller = easier to fold the bag over.
+WALL = 4.0
+HEIGHT = 6.0
+CHAMFER = 0.5  # All 4 edges: no sharp edge on the bag, no elephant foot.
+RIB_PITCH = 3.0  # Knob: rib spacing around the outside.
+RIB_DEPTH = 0.6  # Knob: rib height. 0 = smooth ring.
+
+STL_TOLERANCE = 0.05
+OUT = Path(__file__).resolve().parent / "out"
+NAME = "trash-bag-hoop"
+
+ro, ri, c, h = RING_OD / 2, RING_OD / 2 - WALL, CHAMFER, HEIGHT
+rp = ro + RIB_DEPTH  # Rib peak.
+c_out = c + RIB_DEPTH  # Outer chamfer ends on the valleys, so the ribs fade out.
+rz = [(ri + c, 0), (rp - c_out, 0), (rp, c_out), (rp, h - c_out), (rp - c_out, h), (ri + c, h), (ri, h - c), (ri, c)]
+face = Part.Face(Part.makePolygon([V(r, 0, z) for r, z in rz + rz[:1]]))
+envelope = face.revolve(V(0, 0, 0), V(0, 0, 1), 360)
+
+n = round(math.pi * RING_OD / RIB_PITCH)
+star = [V(r * math.cos(a), r * math.sin(a), 0) for i in range(2 * n) for a, r in [(i * math.pi / n, rp if i % 2 == 0 else ro)]]
+ribs = Part.Face(Part.makePolygon(star + star[:1])).extrude(V(0, 0, h))
+s = envelope.common(ribs)
+
+bb = s.BoundBox
+assert s.isValid() and len(s.Solids) == 1, "not one valid solid"
+assert abs(bb.XLength - 2 * rp) < 1e-6 and abs(bb.ZMin) < 1e-6 and abs(bb.ZLength - h) < 1e-6, bb
+assert not s.isInside(V(0, 0, h / 2), 1e-3, True), "centre must be open"
+outer = max(s.slice(V(0, 0, 1), h / 2), key=lambda w: w.BoundBox.XLength)
+assert len(outer.Edges) == 2 * n, f"expected {n} ribs, found {len(outer.Edges) / 2:g}"
+valley = math.pi / n
+assert s.isInside(V(rp - 0.05, 0, h / 2), 1e-3, True), "rib peak missing"
+assert not s.isInside(V((ro + 0.1) * math.cos(valley), (ro + 0.1) * math.sin(valley), h / 2), 1e-3, True), "rib valley missing"
+mesh = Mesh.Mesh(s.tessellate(STL_TOLERANCE))
+assert mesh.isSolid() and not mesh.hasNonManifolds(), "mesh not watertight"
+
+OUT.mkdir(exist_ok=True)
+doc = App.newDocument("TrashBagHoop")
+doc.addObject("Part::Feature", "Hoop").Shape = s
+doc.recompute()
+out = OUT / NAME
+for suffix, write in ((".FCStd", doc.saveAs), (".step", s.exportStep), (".stl", mesh.write)):
+    tmp = str(out) + ".tmp" + suffix
+    write(tmp)
+    os.replace(tmp, out.with_suffix(suffix))
+App.closeDocument(doc.Name)
+print(f"PASS: ring OD {RING_OD:g} (+{RIB_DEPTH:g} ribs, {n} x {RIB_PITCH:g} mm) ID {2 * ri:g} x {h:g} tall, {s.Volume * 1.24e-3:.0f} g PLA, wrote {out}.{{FCStd,step,stl}}")
