@@ -16,14 +16,14 @@ import Part
 
 V = App.Vector
 
-# ASSUMED: the user's bag is about 140 mm across when opened round.
-BAG_D = 140.0
-RING_OD = BAG_D - 6.0  # Knob: smaller = easier to fold the bag over.
-WALL = 4.0
-HEIGHT = 6.0
-CHAMFER = 0.5  # All 4 edges: no sharp edge on the bag, no elephant foot.
+BED = 180.0  # Bambu A1 Mini, X and Y.
+BED_MARGIN = 2.0  # Knob: clearance to the bed edge, each side.
+WALL = 6.0  # Radial width. In-plane stiffness (ring squeezed oval) ~ HEIGHT * WALL^3.
+HEIGHT = 10.0  # Twist and droop stiffness ~ WALL * HEIGHT^3.
+CHAMFER = 1.0  # All 4 edges: no sharp edge on the bag, no elephant foot.
 RIB_PITCH = 3.0  # Knob: rib spacing around the outside.
 RIB_DEPTH = 0.6  # Knob: rib height. 0 = smooth ring.
+RING_OD = BED - 2 * (BED_MARGIN + RIB_DEPTH)  # Largest ring that fits the bed, rib tips included.
 
 STL_TOLERANCE = 0.05
 OUT = Path(__file__).resolve().parent / "out"
@@ -44,6 +44,7 @@ s = envelope.common(ribs)
 bb = s.BoundBox
 assert s.isValid() and len(s.Solids) == 1, "not one valid solid"
 assert abs(bb.XLength - 2 * rp) < 1e-6 and abs(bb.ZMin) < 1e-6 and abs(bb.ZLength - h) < 1e-6, bb
+assert 2 * rp <= BED - 2 * BED_MARGIN + 1e-6, f"ring {2 * rp:.1f} does not fit the {BED:g} bed"
 assert not s.isInside(V(0, 0, h / 2), 1e-3, True), "centre must be open"
 outer = max(s.slice(V(0, 0, 1), h / 2), key=lambda w: w.BoundBox.XLength)
 assert len(outer.Edges) == 2 * n, f"expected {n} ribs, found {len(outer.Edges) / 2:g}"
