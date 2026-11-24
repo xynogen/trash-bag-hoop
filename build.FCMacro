@@ -50,7 +50,9 @@ CLAMP_W = 30.0  # Along the table edge; also the print height.
 LEAD_IN = 1.5  # 45 deg on the inner arm tips, so the clamp slides on.
 E_PLA = 3500.0  # ASSUMED: PLA modulus, MPa.
 MAX_STRESS = 25.0  # About half of PLA yield: limits creep under constant preload.
-SLOT_CL = 0.25  # Knob: radial clearance per side, ring (plus bag) in the holder slot.
+# Knob: radial clearance per side, ring in the holder slot. Negative = press fit.
+# Measured: at +0.25 the slot was ~1 mm too loose (user), so -0.25 closes it by 1 mm total.
+SLOT_CL = -0.25
 HOLDER_IN = 4.0  # Holder wall inside the ring.
 HOLDER_OUT = 3.0  # Holder wall between the ring and the clamp spine.
 HOLDER_FLOOR = 3.0
@@ -180,7 +182,10 @@ def check_clamp(s, r):
     assert inside(S + HOLDER_OUT / 2, z_mid), "holder outer wall missing"
     assert inside(x_slot, Z_TOP - h - HOLDER_FLOOR / 2), "holder floor missing"
     common = s.common(r).Volume
-    assert common < 1e-3, f"ring hits the holder: {common:.3f} mm^3"
+    if SLOT_CL >= 0:
+        assert common < 1e-3, f"ring hits the holder: {common:.3f} mm^3"
+    else:
+        assert common > 0.1, "press fit set (SLOT_CL < 0) but the ring does not touch the slot walls"
     gap = s.distToShape(r)[0]
     assert gap < 1e-3, f"ring does not sit on the holder floor: {gap:.3f}"
     spun = r.copy()

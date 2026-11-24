@@ -15,9 +15,9 @@ fully parametric: one FreeCAD macro holds every dimension and checks the geometr
 | | mm |
 |---|---|
 | Ring | 176 OD at the ribs, 162.8 ID, 6 wide x 10 tall |
-| Ring centre | 97 from the table edge, ring top level with the table top |
+| Ring centre | 96.8 from the table edge, ring top level with the table top |
 | Table | 69 thick (measured), clamp reaches 40 over and under |
-| Clamp | 61.5 x 30 x 85.5 |
+| Clamp | 60.5 x 30 x 85.5 |
 | Plate | 176 x 176 x 30 |
 | Filament | ~77 g PLA (ring 40, clamp 37) |
 
@@ -30,8 +30,8 @@ fully parametric: one FreeCAD macro holds every dimension and checks the geometr
   3 mm, so they bend along their length, not at the corner. 45 deg lead-ins on the tips
   guide it on.
 - **Ring holder:** a curved slot on the clamp spine. Its outer wall carries the same ribs
-  as the ring, 0.25 mm larger, so the ring meshes with it and cannot spin. The bag folds
-  over the ring and is pinched in the slot.
+  as the ring, so the ring meshes with it and cannot spin. The slot is 0.25 mm per side
+  *smaller* than the ring: a press fit, tuned on a test print (at +0.25 it was ~1 mm loose).
 - **Load path:** the bag pries the clamp, so the bottom arm tip bears up on the table
   underside. The grip only has to keep the clamp from sliding off.
 
@@ -68,7 +68,7 @@ the grip and the slot fit.
 |---|---|---|
 | `TABLE_T` | 69 | Table thickness at the edge. Measure yours |
 | `SQUEEZE` | 1.5 | Arm tip into the table, per side. More = tighter grip |
-| `SLOT_CL` | 0.25 | Ring-to-slot clearance per side. More if the ring with the bag will not go in |
+| `SLOT_CL` | -0.25 | Ring-to-slot clearance per side; negative = press fit. Raise it if the ring will not go in, lower it if loose |
 | `ROOT_T`, `TIP_T` | 6, 3 | Arm thickness at the root and tip |
 | `WALL`, `HEIGHT` | 6, 10 | Ring section |
 | `RIB_DEPTH`, `RIB_PITCH` | 0.6, 3 | Ring ribs. `RIB_DEPTH = 0` gives a smooth ring |
